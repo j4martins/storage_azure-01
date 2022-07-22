@@ -1,0 +1,200 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.1.1",
+    "parameters": {
+        "storageCount": {
+            "type": "int",
+            "defaultValue": 2
+        }
+    },
+    
+    "resources": [{
+        "name": "[concat(copyIndex(),'bloct', uniqueString(resourceGroup().id))]",
+        "type": "Microsoft.Storage/storageAccounts",
+        "apiVersion": "2019-06-01",
+        "location": "[resourceGroup().location]",
+        "tags": {
+            "displayName": "Storage"
+        },
+        "sku": {
+           "name": "Standard_LRS",
+           "tier": "Standard"
+        },
+        "properties": {
+            "accessTier": "Hot"
+        },
+        "kind": "StorageV2",
+        "copy": {
+            "name": "storagecopy",
+            "count": "[parameters('storageCount')]",
+            "mode": "Serial",
+            "batchSize": 1
+        }       
+    },
+    {
+        "name": "ipred",
+        "type": "Microsoft.Network/publicIPAddresses",
+        "apiVersion": "2019-11-01",
+        "location": "[resourceGroup().location]",
+        "tags": {
+            "displayName": "Network"
+        },
+        "properties": {
+            "publicIPAllocationMethod": "Dynamic",
+            "dnsSettings": {
+                "domainNameLabel": "[toLower('ipred')]"
+            }
+        }
+    },
+    {
+        "name": "sec01",
+        "type": "Microsoft.Network/networkSecurityGroups",
+        "apiVersion": "2018-08-01",
+        "location": "[resourceGroup().location]",
+        "properties": {
+            "securityRules": [
+                {
+                    "name": "rmt01",
+                    "properties": {
+                        "description": "description",
+                        "protocol": "Tcp",
+                        "sourcePortRange": "*",
+                        "destinationPortRange": "5985",
+                        "sourceAddressPrefix": "*",
+                        "destinationAddressPrefix": "*",
+                        "access": "Allow",
+                        "priority": 100,
+                        "direction": "Inbound"
+                    }
+                }
+            ]
+        }
+    },
+    {
+        "name": "vnt01",
+        "type": "Microsoft.Network/virtualNetworks",
+        "apiVersion": "2019-11-01",
+        "location": "[resourceGroup().location]",
+        "dependsOn": [
+            "[resourceId('Microsoft.Network/networkSecurityGroups', 'sec01')]"
+        ],
+        "tags": {
+            "displayName": "Network"
+        },
+        "properties": {
+            "addressSpace": {
+                "addressPrefixes": [
+                    "10.0.0.0/16"
+                ]
+            },
+            "subnets": [
+                {
+                    "name": "Subnetprod01",
+                    "properties": {
+                       "addressPrefix": "10.0.0.0/24",
+                       "networkSecurityGroup": {
+                           "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'sec01')]"
+                        }
+                    }
+                }
+            ]
+        }
+    },
+    {
+        "name": "nic01",
+        "type": "Microsoft.Network/networkInterfaces",
+        "apiVersion": "2019-11-01",
+        "location": "[resourceGroup().location]",
+        "dependsOn": [
+            "[resourceId('Microsoft.Network/publicIPAddresses', 'ipred')]",
+            "[resourceId('Microsoft.Network/virtualNetworks', 'vnt01')]"
+        ],
+        "tags": {
+            "displayName": "Network"
+        },
+        "properties": {
+            "ipConfigurations": [
+                {
+                    "name": "ipConfig1",
+                    "properties": {
+                        "privateIPAllocationMethod": "Dynamic",
+                        "publicIPAddress": {
+                            "id": "[resourceId('Microsoft.Network/publicIPAddresses', 'ipred')]"
+                        },
+                        "subnet": {
+                            "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'vnt01', 'Subnetprod01')]"
+                        }
+                    }
+                }
+            ]
+        }
+    },
+    {
+        "name": "Dcprodserv01",
+        "type": "Microsoft.Compute/virtualMachines",
+        "apiVersion": "2019-07-01",
+        "location": "[resourceGroup().location]",
+        "dependsOn": [
+            "[resourceId('Microsoft.Network/networkInterfaces', 'nic01')]"
+        ],
+        "tags": {
+            "displayName": "Produção"
+        },
+        "properties": {
+            "storageProfile": {
+                "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2012-R2-Datacenter",
+                        "version": "latest"
+                    },
+                "osDisk": {
+                    "osType": "Windows",
+                    "name": "dsk",
+                    "caching": "ReadWrite",
+                    "createOption": "FromImage"
+            },
+                "dataDisks": [
+                    {
+                     "lun": 0,
+                     "createOption": "Empty",
+                     "diskSizeGB": 100
+                    },
+                    {
+                     "lun": 1,
+                     "createOption": "Empty",
+                     "diskSizeGB": 100  
+                    },
+                    {
+                     "lun": 2,
+                     "createOption": "Empty",
+                     "diskSizeGB": 100
+                    },
+                    {
+                     "lun": 3,
+                     "createOption": "Empty",
+                     "diskSizeGB": 100
+                    }
+                ]
+            },
+            "hardwareProfile": {
+                "vmSize": "Standard_D2_v3"
+            },
+            
+            "osProfile": {
+                "computerName": "Dcprodserv01",
+                "adminUsername": "Jmartins",
+                "adminPassword": "Net@dmin#845"
+            },
+            
+            "networkProfile": {
+                "networkInterfaces": [
+                    {
+                        "id": "[resourceId('Microsoft.Network/networkInterfaces', 'nic01')]"
+                    }
+                ]
+            }
+        }
+    }],
+    "outputs": {}
+}
